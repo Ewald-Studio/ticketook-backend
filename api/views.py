@@ -263,6 +263,7 @@ def session__new(request):
 @csrf_exempt
 def session__action(request, action_type):
     data = json.loads(request.body)
+    warnings = []
 
     # Check if operator exists and has permission to manage sessions
     try:
@@ -281,7 +282,8 @@ def session__action(request, action_type):
         return JsonResponse({ 'error': 'Invalid session id' }, status=400)
 
     if action_type == 'pause':
-        # @todo check if already
+        if session.is_paused:
+            warnings.append({ 'error': 'Session was already paused' })
         session.pause()
     elif action_type == 'finish':
         # @todo check if already
@@ -300,7 +302,8 @@ def session__action(request, action_type):
     response = {
         'session_id': session.pk,
         'action': action_type,
-        'success': True
+        'success': True,
+        'warnings': warnings
     }
     return JsonResponse(response)
 
