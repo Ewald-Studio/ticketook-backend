@@ -10,7 +10,8 @@ from app.core.models import (
     Zone,
     Session,
     ServiceSessionLimit,
-    Ticket
+    Ticket,
+    Log
 )
 
 
@@ -28,6 +29,8 @@ def login(request):
     operator.current_token = token
     operator.save()
 
+    Log.objects.create(action='LOGIN', zone=operator.zone, operator=operator)
+
     response = {
         'token': token
     }
@@ -44,6 +47,8 @@ def logout(request):
     operator.current_token = None
     operator.save()
 
+    Log.objects.create(action='LOGOUT', zone=operator.zone, operator=operator)
+
     response = {
         'success': True
     }
@@ -52,7 +57,6 @@ def logout(request):
 
 @csrf_exempt
 def ticket(request):
-
     data = json.loads(request.body)
 
     # Checking request integrity
@@ -128,6 +132,8 @@ def ticket(request):
         date_closed__isnull=True, 
         is_skipped=False
     )
+
+    Log.objects.create(action='TICKET-ISSUE', zone=session.zone, session=session, service=service, ticket=ticket)
 
     # Well done!
     response = {
@@ -253,6 +259,17 @@ def session__new(request):
         except:
             warnings.append({ "error": "Invalid service limit data" })
 
+    # Setting the session as active in the zone
+    zone.active_session = session
+    zone.save()
+
+    Log.objects.create(
+        action='SESSION-NEW', 
+        zone=zone, 
+        session=session,
+        operator=operator
+    )
+
     # Session is ready
     response = {
         'session': {
@@ -264,7 +281,7 @@ def session__new(request):
 
 
 @csrf_exempt
-def session__action(request, action_type):
+def session__action(request, session_id, action_type):
     data = json.loads(request.body)
     warnings = []
 
@@ -278,7 +295,7 @@ def session__action(request, action_type):
 
     # Check if requested session exists
     try:
-        session = Session.objects.get(pk=data['session_id'])
+        session = Session.objects.get(pk=session_id)
     except Zone.DoesNotExist:
         return JsonResponse({ 'error': 'Session does not exist' }, status=400)
     except KeyError:
@@ -287,15 +304,15 @@ def session__action(request, action_type):
     if action_type == 'pause':
         if session.is_paused:
             warnings.append({ 'error': 'Session was already paused' })
-        session.pause()
+        session.pause(operator)
     elif action_type == 'finish':
         if session.date_finish is not None:
             warnings.append({ 'error': 'Session was already finished' })
-        session.finish()
+        session.finish(operator)
     elif action_type == 'resume':
         if Session.objects.filter(zone=session.zone, date_finish__isnull=True).exists():
             return JsonResponse({ 'error': 'Opened session already exists' }, status=400)
-        session.resume()
+        session.resume(operator)
     elif action_type == 'skip_pending_tickets':
         tickets = session.tickets.filter(date_closed__isnull=True)
         for ticket in tickets:
@@ -323,17 +340,18 @@ def session__info(request, session_id):
         status = 'active'
     elif session.is_paused:
         status = 'paused'
+    elif session.planned_finish_datetime and session.planned_finish_datetime < timezone.now():
+        status = 'timeout'
     else:
         status = 'finished'
 
     # @todo status for planned_finish_datetime exceeded?
 
     active_tickets = session.tickets.filter(is_active=True).order_by('-number')
-    if request.GET.get('full'):
-        closed_tickets = session.tickets.filter(date_closed__isnull=False).order_by('-number')
-    else:
-        closed_tickets = session.tickets.filter(date_closed__isnull=False).order_by('-number')[:10]
     pending_tickets = session.tickets.filter(is_active=False, date_closed__isnull=True).order_by('-number')
+    closed_tickets = session.tickets.filter(date_closed__isnull=False).order_by('-number')
+    if not request.GET.get('full'):
+        closed_tickets = closed_tickets[:10]
 
     def tickets_list(tickets):
         return [{
@@ -356,5 +374,44 @@ def session__info(request, session_id):
     }
     return JsonResponse(response)
 
-def session__check(request):
-    pass
+
+def zone__info(request, zone_id):
+    # Check if requested zone exists
+    try:
+        zone = Zone.objects.get(pk=zone_id)
+    except Zone.DoesNotExist:
+        return JsonResponse({ 'error': 'Zone does not exist' }, status=404)
+    
+    if zone.active_session:
+        session_id = zone.active_session.pk
+    else:
+        session_id = None
+    
+    response = {
+        'active_session_id': session_id
+    }
+    return JsonResponse(response)
+
+
+def zone__log(request, zone_id):
+    # Check if requested zone exists
+    try:
+        zone = Zone.objects.get(pk=zone_id)
+    except Zone.DoesNotExist:
+        return JsonResponse({ 'error': 'Zone does not exist' }, status=404)
+
+    limit = 30
+    offset = request.GET.get('offset', 0)
+    actions = request.GET.get('actions', None)
+
+    if actions is not None:
+        actions = actions.split(',')
+        logs = Log.objects.filter(zone=zone, pk__gt=offset, action__in=actions)[:limit]
+    else:
+        logs = Log.objects.filter(zone=zone, pk__gt=offset)[:limit]
+
+    log_list = [log.as_object() for log in logs]
+
+    response = log_list
+    return JsonResponse(response, safe=False)
+

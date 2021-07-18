@@ -1,6 +1,6 @@
 from django.contrib import admin
 from .models import (
-    Service, Operator, Terminal,
+    Log, Service, Operator, Terminal,
     Zone, ServiceZoneLimit,
     Session,
     ServiceSessionLimit,
@@ -16,3 +16,4 @@ admin.site.register(ServiceZoneLimit)
 admin.site.register(Session)
 admin.site.register(ServiceSessionLimit)
 admin.site.register(Ticket)
+admin.site.register(Log)
