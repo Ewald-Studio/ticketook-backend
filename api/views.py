@@ -310,7 +310,7 @@ def session__action(request, session_id, action_type):
             warnings.append({ 'error': 'Session was already finished' })
         session.finish(operator)
     elif action_type == 'resume':
-        if Session.objects.filter(zone=session.zone, date_finish__isnull=True).exists():
+        if Session.objects.filter(zone=session.zone, date_finish__isnull=True, is_paused=False).exists():
             return JsonResponse({ 'error': 'Opened session already exists' }, status=400)
         session.resume(operator)
     elif action_type == 'skip_pending_tickets':
@@ -361,11 +361,9 @@ def session__info(request, session_id):
         } for ticket in tickets]
 
     response = {
-        'session': {
-            'id': session.pk,
-            'planned_finish_datetime': session.planned_finish_datetime,
-            'status': status
-        },
+        'id': session.pk,
+        'planned_finish_datetime': session.planned_finish_datetime,
+        'status': status,
         'tickets': {
             'active': tickets_list(active_tickets),
             'closed': tickets_list(closed_tickets),
