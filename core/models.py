@@ -225,7 +225,7 @@ class Log(models.Model):
 
         if self.action.startswith('TICKET'):
             result['ticket'] = {
-                'id': self.ticket.id,
+                'id': self.ticket_id,
                 'full_number': self.ticket.full_number,
             }
 
