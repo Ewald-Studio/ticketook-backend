@@ -34,7 +34,7 @@ class Terminal(models.Model):
         return self.name
 
 
-class SessionConfiguration(models.Model):
+class Zone(models.Model):
     name = models.CharField(max_length=255)
     planned_finish_time = models.TimeField(blank=True, null=True)
     services = models.ManyToManyField(Service, blank=True)
@@ -45,8 +45,8 @@ class SessionConfiguration(models.Model):
         return self.name
 
 
-class ServiceConfigurationLimit(models.Model):
-    configuration = models.ForeignKey(SessionConfiguration, related_name='service_limits', on_delete=models.CASCADE)
+class ServiceZoneLimit(models.Model):
+    zone = models.ForeignKey(Zone, related_name='service_limits', on_delete=models.CASCADE)
     service = models.ForeignKey(Service, on_delete=models.CASCADE)
     max_tickets_count = models.PositiveIntegerField(default=0)
 
@@ -55,7 +55,7 @@ class Session(models.Model):
     date_start = models.DateTimeField(auto_now_add=True)
     date_finish = models.DateTimeField(blank=True, null=True)
     planned_finish_datetime = models.DateTimeField(blank=True, null=True)
-    configuration = models.ForeignKey(SessionConfiguration, null=True, on_delete=models.SET_NULL)
+    zone = models.ForeignKey(Zone, null=True, on_delete=models.SET_NULL)
     is_paused = models.BooleanField(default=False)
 
     @property

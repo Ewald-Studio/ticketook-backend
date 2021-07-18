@@ -7,7 +7,7 @@ from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from app.core.models import (
     Service, Operator, Terminal,
-    SessionConfiguration,
+    Zone,
     Session,
     ServiceSessionLimit,
     Ticket
@@ -67,8 +67,8 @@ def ticket(request):
     except Session.DoesNotExist:
         return JsonResponse({ 'error': 'Requested session does not exist' }, status=400)
 
-    # @todo check if terminal exists in session configuration
-    if not session.configuration.terminals.filter(pk=terminal.pk).exists():
+    # Check if terminal exists in session zone
+    if not session.zone.terminals.filter(pk=terminal.pk).exists():
         return JsonResponse({ 'error': 'Terminal has no access to this session' }, status=403)
 
     # Checking if session is closed or paused
@@ -86,11 +86,11 @@ def ticket(request):
     # Checking if ticket count limit exceeded
     max_tickets_count = 0
     session_limits = session.service_limits.filter(service=service)
-    configuration_limits = session.configuration.service_limits.filter(service=service)
+    zone_limits = session.zone.service_limits.filter(service=service)
     if session_limits.exists():
         max_tickets_count = session_limits[0].max_tickets_count
-    elif configuration_limits.exists(): 
-        max_tickets_count = configuration_limits[0].max_tickets_count
+    elif zone_limits.exists(): 
+        max_tickets_count = zone_limits[0].max_tickets_count
 
     if max_tickets_count > 0 and tickets.count() >= max_tickets_count:
         return JsonResponse({ 'error': 'Maximum tickets count exceeded' }, status=410)
@@ -160,7 +160,7 @@ def operator__take(request):
     except Ticket.DoesNotExist:
         pass
 
-    sessions = Session.objects.filter(configuration__operators=operator)
+    sessions = Session.objects.filter(zone__operators=operator)
 
     # Taking specified ticket if operator wish to
     if data.get('ticket_id'):
@@ -210,27 +210,27 @@ def session__new(request):
     if not operator.is_manager:
         return JsonResponse({ 'error': 'Operator has no permission to manage sessions' }, status=403)
 
-    # Check if requested configuration exists
+    # Check if requested zone exists
     try:
-        configuration = SessionConfiguration.objects.get(pk=data['configuration_id'])
-    except SessionConfiguration.DoesNotExist:
-        return JsonResponse({ 'error': 'Configuration does not exist' }, status=400)
+        zone = Zone.objects.get(pk=data['zone_id'])
+    except Zone.DoesNotExist:
+        return JsonResponse({ 'error': 'Zone does not exist' }, status=400)
     except KeyError:
-        return JsonResponse({ 'error': 'Invalid configuration id' }, status=400)
+        return JsonResponse({ 'error': 'Invalid zone id' }, status=400)
 
     # Check if no active session exists
-    if Session.objects.filter(configuration=configuration, date_finish__isnull=True).exists():
+    if Session.objects.filter(zone=zone, date_finish__isnull=True).exists():
         return JsonResponse({ 'error': 'Opened session already exists' }, status=400)
 
     # Creating new session
     session = Session.objects.create(
-        configuration=configuration
+        zone=zone
     )
 
     # Setting session finish datetime and/or service limits if given
     planned_finish_time = data.get('planned_finish_time')
     if not planned_finish_time:
-        planned_finish_time = configuration.planned_finish_time
+        planned_finish_time = zone.planned_finish_time
     
     if planned_finish_time:
         now = datetime.datetime.now()
@@ -279,7 +279,7 @@ def session__action(request, action_type):
     # Check if requested session exists
     try:
         session = Session.objects.get(pk=data['session_id'])
-    except SessionConfiguration.DoesNotExist:
+    except Zone.DoesNotExist:
         return JsonResponse({ 'error': 'Session does not exist' }, status=400)
     except KeyError:
         return JsonResponse({ 'error': 'Invalid session id' }, status=400)
@@ -293,7 +293,7 @@ def session__action(request, action_type):
             warnings.append({ 'error': 'Session was already finished' })
         session.finish()
     elif action_type == 'resume':
-        if Session.objects.filter(configuration=session.configuration, date_finish__isnull=True).exists():
+        if Session.objects.filter(zone=session.zone, date_finish__isnull=True).exists():
             return JsonResponse({ 'error': 'Opened session already exists' }, status=400)
         session.resume()
     elif action_type == 'skip_pending_tickets':
