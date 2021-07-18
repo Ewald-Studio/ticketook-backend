@@ -387,8 +387,20 @@ def zone__info(request, zone_id):
     else:
         session_id = None
     
+    services = zone.services.all()
+    operators = zone.operators.all()
+
+    last_log = Log.objects.filter(zone=zone).last()
+    if last_log:
+        log_offset = last_log.pk
+    else:
+        log_offset = 0
+
     response = {
-        'active_session_id': session_id
+        'active_session_id': session_id,
+        'log_offset': log_offset,
+        'services': [{'id': service.id, 'name': service.name} for service in services],
+        'operators': [{'id': op.id, 'name': op.name} for op in operators],        
     }
     return JsonResponse(response)
 

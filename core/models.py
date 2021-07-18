@@ -211,15 +211,16 @@ class Log(models.Model):
     def as_object(self):
         result = {
             'id': self.pk,
+            'action': self.action,
             'datetime': self.datetime,
             'zone': {
-                'id': self.zone.pk,
+                'id': self.zone_id
             }
         }
 
         if self.action in ('LOGIN', 'LOGOUT'):
             result['operator'] = {
-                'id': self.operator.pk
+                'id': self.operator_id
             }
 
         if self.action.startswith('TICKET'):
@@ -230,13 +231,13 @@ class Log(models.Model):
 
         if self.action == 'TICKET-TAKE':
             result['ticket']['operator'] = {
-                'id': self.ticket.operator.pk,
-                'name': self.ticket.operator.name,
+                'id': self.ticket.operator_id,
+                # 'name': self.ticket.operator.name,
             }
 
         if self.action.startswith('SESSION'):
             result['session'] = {
-                'id': self.session.id,
+                'id': self.session_id,
             }
 
         return result
