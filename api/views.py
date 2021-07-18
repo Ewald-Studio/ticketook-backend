@@ -3,12 +3,11 @@ import uuid
 import datetime
 from django.db import IntegrityError
 from django.http import JsonResponse
-from django.core.exceptions import ValidationError
-from django.views.decorators import csrf
+from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from app.core.models import (
     Service, Operator, Terminal,
-    SessionConfiguration, ServiceConfigurationLimit,
+    SessionConfiguration,
     Session,
     ServiceSessionLimit,
     Ticket
@@ -54,13 +53,6 @@ def logout(request):
 @csrf_exempt
 def ticket(request):
 
-    # @todo Improve this to get operator with smallest amount of tickets
-    def get_best_operator(session, service):
-        try:
-            return session.configuration.operators.filter(services_providing=service).order_by('?')[0]
-        except IndexError:
-            return None
-
     data = json.loads(request.body)
 
     # Checking request integrity
@@ -76,14 +68,12 @@ def ticket(request):
         return JsonResponse({ 'error': 'Requested session does not exist' }, status=400)
 
     # @todo check if terminal exists in session configuration
-
-    operator = get_best_operator(session, service)
-    if operator is None:
-        return JsonResponse({ 'error': 'No operators configured for this service & session' }, status=500)
+    if not session.configuration.terminals.filter(pk=terminal.pk).exists():
+        return JsonResponse({ 'error': 'Terminal has no access to this session' }, status=403)
 
     # Checking if session is closed or paused
     if session.is_paused:
-        return JsonResponse({ 'error': 'Session is paused' }, status=403)
+        return JsonResponse({ 'error': 'Session is paused' }, status=410)
     elif session.is_active == False:
         return JsonResponse({ 'error': 'Session is finished' }, status=410)
 
@@ -103,9 +93,11 @@ def ticket(request):
         max_tickets_count = configuration_limits[0].max_tickets_count
 
     if max_tickets_count > 0 and tickets.count() >= max_tickets_count:
-        return JsonResponse({ 'error': 'Maximum tickets count exceeded' }, status=403)
+        return JsonResponse({ 'error': 'Maximum tickets count exceeded' }, status=410)
 
-    # @todo check if planned finish datetime exceeded
+    # Checking if planned finish datetime exceeded
+    if session.planned_finish_datetime and session.planned_finish_datetime < timezone.now():
+        return JsonResponse({ 'error': 'Session time is over' }, status=410)
 
     # Creating new ticket with fresh number
     try:
@@ -122,7 +114,6 @@ def ticket(request):
             ticket = Ticket.objects.create(
                 session=session,
                 service=service,
-                operator=operator,
                 number=number
             )
             running = False
@@ -131,11 +122,19 @@ def ticket(request):
             if tries_remaining == 0:
                 return JsonResponse({ 'error': 'Ticket numbering tries number exceeded' }, status=500)
 
+    # Getting pending tickets count
+    tickets_pending = Ticket.objects.filter(
+        session=session,
+        date_closed__isnull=True, 
+        is_skipped=False
+    )
+
     # Well done!
     response = {
         'ticket': {
             'full_number': ticket.full_number,
-            'operator_name': ticket.operator.name,
+            'pending': tickets_pending.count() - 1,
+            # 'service_pending': tickets_pending.filter(service=service).count() - 1,
         }
     }
     return JsonResponse(response)
@@ -161,25 +160,29 @@ def operator__take(request):
     except Ticket.DoesNotExist:
         pass
 
+    sessions = Session.objects.filter(configuration__operators=operator)
+
     # Taking specified ticket if operator wish to
     if data.get('ticket_id'):
         try:
-            ticket = Ticket.objects.get(operator=operator, pk=data['ticket_id'])
+            ticket = Ticket.objects.get(session__in=sessions, pk=data['ticket_id'])
         except Ticket.DoesNotExist:
             return JsonResponse({ 'error': 'Ticket with requested id does not exist' }, status=404)
-        ticket.take()
+        ticket.take(operator)
     
     # ... or taking next pending ticket
     else:
-        active_tickets = Ticket.objects.filter(
+        services = operator.services_providing.all()
+        pending_tickets = Ticket.objects.filter(
+            session__in=sessions,
             date_closed__isnull=True, 
             is_skipped=False,
             is_active=False,
-            operator=operator
+            service__in=services
         ).order_by('number')
-        if active_tickets.exists():
-            ticket = active_tickets[0]
-            ticket.take()
+        if pending_tickets.exists():
+            ticket = pending_tickets[0]
+            ticket.take(operator)
         else:
             return JsonResponse({ 'error': 'No tickets pending' }, status=404)
 
@@ -231,7 +234,7 @@ def session__new(request):
     
     if planned_finish_time:
         now = datetime.datetime.now()
-        planned_finish_datetime = now.replace(hour=planned_finish_time.hour, minute=planned_finish_time.minute)
+        planned_finish_datetime = now.replace(hour=planned_finish_time.hour, minute=planned_finish_time.minute, second=0)
         if planned_finish_datetime < now:
             planned_finish_datetime = planned_finish_datetime + datetime.timedelta(days=1)
 
@@ -286,7 +289,8 @@ def session__action(request, action_type):
             warnings.append({ 'error': 'Session was already paused' })
         session.pause()
     elif action_type == 'finish':
-        # @todo check if already
+        if session.date_finish is not None:
+            warnings.append({ 'error': 'Session was already finished' })
         session.finish()
     elif action_type == 'resume':
         if Session.objects.filter(configuration=session.configuration, date_finish__isnull=True).exists():
@@ -312,7 +316,7 @@ def session__info(request, session_id):
     # Check if requested session exists
     try:
         session = Session.objects.get(pk=session_id)
-    except SessionConfiguration.DoesNotExist:
+    except Session.DoesNotExist:
         return JsonResponse({ 'error': 'Session does not exist' }, status=404)
 
     if session.is_active:
@@ -332,7 +336,11 @@ def session__info(request, session_id):
     pending_tickets = session.tickets.filter(is_active=False, date_closed__isnull=True).order_by('-number')
 
     def tickets_list(tickets):
-        return [{'id': ticket.id, 'full_number': ticket.full_number} for ticket in tickets]
+        return [{
+            'id': ticket.id, 
+            'full_number': ticket.full_number,
+            'service_id': ticket.service.pk
+        } for ticket in tickets]
 
     response = {
         'session': {

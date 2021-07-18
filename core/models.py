@@ -89,7 +89,7 @@ class ServiceSessionLimit(models.Model):
 class Ticket(models.Model):
     session = models.ForeignKey(Session, on_delete=models.CASCADE, related_name='tickets')
     service = models.ForeignKey(Service, on_delete=models.CASCADE)
-    operator = models.ForeignKey(Operator, on_delete=models.CASCADE)
+    operator = models.ForeignKey(Operator, blank=True, null=True, on_delete=models.SET_NULL)
     date_issued = models.DateTimeField(auto_now_add=True)
     date_taken = models.DateTimeField(blank=True, null=True)
     date_closed = models.DateTimeField(blank=True, null=True)
@@ -107,11 +107,12 @@ class Ticket(models.Model):
     def full_number(self):
         return f"{self.service.prefix}-{self.number}"
 
-    def take(self):
+    def take(self, operator):
         self.date_closed = None
         self.date_taken = datetime.datetime.now()
         self.is_skipped = False
         self.is_active = True
+        self.operator = operator
         self.save()
 
     def close(self):
