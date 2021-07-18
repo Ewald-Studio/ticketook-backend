@@ -357,7 +357,8 @@ def session__info(request, session_id):
         return [{
             'id': ticket.id, 
             'full_number': ticket.full_number,
-            'service_id': ticket.service.pk
+            'service_id': ticket.service.pk,
+            'operator_id': ticket.operator_id
         } for ticket in tickets]
 
     response = {
