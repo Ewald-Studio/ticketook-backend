@@ -147,6 +147,33 @@ def ticket(request):
 
 
 @csrf_exempt
+def operator__close(request):
+    data = json.loads(request.body)
+
+    # Checking request integrity
+    try:
+        operator = Operator.objects.get(current_token=data['token'])
+    except Operator.DoesNotExist:
+        return JsonResponse({ 'error': 'Invalid token' }, status=401)
+
+    # Closing/skipping active ticket if exists
+    try:
+        current_ticket = Ticket.objects.get(operator=operator, is_active=True)
+        if data.get('skip'):
+            current_ticket.skip()
+        else:
+            current_ticket.close()
+    except Ticket.DoesNotExist:
+        pass
+
+    # Ticket has been closed
+    response = {
+        'success': True
+    }
+    return JsonResponse(response)
+
+
+@csrf_exempt
 def operator__take(request):
     data = json.loads(request.body)
 
@@ -340,16 +367,17 @@ def session__info(request, session_id):
         status = 'active'
     elif session.is_paused:
         status = 'paused'
-    elif session.planned_finish_datetime and session.planned_finish_datetime < timezone.now():
-        status = 'timeout'
     else:
         status = 'finished'
 
+    if status != 'finished' and session.planned_finish_datetime and session.planned_finish_datetime < timezone.now():
+        status = 'timeout'
+
     # @todo status for planned_finish_datetime exceeded?
 
-    active_tickets = session.tickets.filter(is_active=True).order_by('-number')
-    pending_tickets = session.tickets.filter(is_active=False, date_closed__isnull=True).order_by('-number')
-    closed_tickets = session.tickets.filter(date_closed__isnull=False).order_by('-number')
+    active_tickets = session.tickets.filter(is_active=True).order_by('number')
+    pending_tickets = session.tickets.filter(is_active=False, date_closed__isnull=True).order_by('number')
+    closed_tickets = session.tickets.filter(date_closed__isnull=False).order_by('number')
     if not request.GET.get('full'):
         closed_tickets = closed_tickets[:10]
 
