@@ -29,7 +29,7 @@ def login(request):
     operator.current_token = token
     operator.save()
 
-    Log.objects.create(action='LOGIN', zone=operator.zone, operator=operator)
+    # Log.objects.create(action='LOGIN', zone=operator.zone, operator=operator)
 
     response = {
         'token': token
@@ -47,7 +47,7 @@ def logout(request):
     operator.current_token = None
     operator.save()
 
-    Log.objects.create(action='LOGOUT', zone=operator.zone, operator=operator)
+    # Log.objects.create(action='LOGOUT', zone=operator.zone, operator=operator)
 
     response = {
         'success': True
@@ -206,6 +206,13 @@ def operator__take(request):
     # ... or taking next pending ticket
     else:
         services = operator.services_providing.all()
+        if data.get('service_slug'):
+            try:
+                service = Service.objects.get(slug=data['service_slug'])
+                services = [service]
+            except Service.DoesNotExist:
+                return JsonResponse({ 'error': 'Requested service does not exist' }, status=404)
+            
         pending_tickets = Ticket.objects.filter(
             session__in=sessions,
             date_closed__isnull=True, 
@@ -277,12 +284,13 @@ def session__new(request):
     service_limits = data.get('service_limits', [])
     for service_limit in service_limits:
         try:
-            service = Service.objects.get(pk=service_limit['service_id'])
-            ServiceSessionLimit.objects.create(
-                session=session, 
-                service=service, 
-                max_tickets_count=service_limit['max_tickets_count']
-            )
+            if service_limit['max_tickets_count'] > 0:
+                service = Service.objects.get(pk=service_limit['service_id'])
+                ServiceSessionLimit.objects.create(
+                    session=session, 
+                    service=service, 
+                    max_tickets_count=service_limit['max_tickets_count']
+                )
         except:
             warnings.append({ "error": "Invalid service limit data" })
 
@@ -296,6 +304,51 @@ def session__new(request):
         session=session,
         operator=operator
     )
+
+    # Session is ready
+    response = {
+        'session': {
+            'id': session.pk
+        },
+        'warnings': warnings
+    }
+    return JsonResponse(response)
+
+
+@csrf_exempt
+def session__limits(request):
+    data = json.loads(request.body)
+
+    warnings = []
+
+    # Check if operator exists and has permission to manage sessions
+    try:
+        operator = Operator.objects.get(current_token=data['token'])
+    except Operator.DoesNotExist:
+        return JsonResponse({ 'error': 'Invalid token' }, status=401)
+    if not operator.is_manager:
+        return JsonResponse({ 'error': 'Operator has no permission to manage sessions' }, status=403)
+
+    # Check if session exists
+    try:
+        session = Session.objects.get(pk=data['session_id'])
+    except Session.DoesNotExist:
+        return JsonResponse({ 'error': 'Session does not exist' }, status=404)
+    except KeyError:
+        return JsonResponse({ 'error': 'No session id specified' }, status=400)
+
+    service_limits = data.get('service_limits', [])
+    for service_limit in service_limits:
+        try:
+            service = Service.objects.get(pk=service_limit['service_id'])
+            limit_object, created = ServiceSessionLimit.objects.get_or_create(
+                session=session, 
+                service=service
+            )
+            limit_object.max_tickets_count = service_limit['max_tickets_count']
+            limit_object.save()
+        except:
+            warnings.append({ "error": "Invalid service limit data" })
 
     # Session is ready
     response = {
@@ -426,7 +479,7 @@ def zone__info(request, zone_id):
     response = {
         'active_session_id': session_id,
         'log_offset': log_offset,
-        'services': [{'id': service.id, 'name': service.name} for service in services],
+        'services': [{'id': service.id, 'name': service.name, 'slug': service.slug} for service in services],
         'operators': [{'id': op.id, 'name': op.name} for op in operators],        
     }
     return JsonResponse(response)
