@@ -45,6 +45,7 @@ while True:
             print_check(r.json()['ticket']['full_number'])
         except:
             pass
+        sleep(3)
         button_1_state = True
     else:
         button_1_state = False
@@ -56,6 +57,7 @@ while True:
             print_check(r.json()['ticket']['full_number'])
         except:
             pass
+        sleep(3)
         button_2_state = True
     else:
         button_2_state = False
