@@ -40,16 +40,22 @@ while True:
 
     if button_1.is_pressed and button_1_state == False:
         print('B1 pressed!')
-        r = requests.post(API_URL + 'ticket/', data={ "access_key": ACCESS_KEY, "service_slug": "first", "session_id": active_session_id })
-        print_check(r.json()['ticket']['full_number'])
+        try:
+            r = requests.post(API_URL + 'ticket/', data={ "access_key": ACCESS_KEY, "service_slug": "first", "session_id": active_session_id })
+            print_check(r.json()['ticket']['full_number'])
+        except:
+            pass
         button_1_state = True
     else:
         button_1_state = False
     
     if button_2.is_pressed and button_2_state == False:
         print('B2 pressed!')
-        r = requests.post(API_URL + 'ticket/', data={ "access_key": ACCESS_KEY, "service_slug": "second", "session_id": active_session_id })
-        print_check(r.json()['ticket']['full_number'])
+        try:
+            r = requests.post(API_URL + 'ticket/', data={ "access_key": ACCESS_KEY, "service_slug": "second", "session_id": active_session_id })
+            print_check(r.json()['ticket']['full_number'])
+        except:
+            pass
         button_2_state = True
     else:
         button_2_state = False
