@@ -1,0 +1,10 @@
+[Unit]
+Description=Button checker for TickeTook
+After=multi-user.target
+ 
+[Service]
+Type=simple
+ExecStart=/home/pi/ticketook/pi/pi.py
+ 
+[Install]
+WantedBy=multi-user.target
