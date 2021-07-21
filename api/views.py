@@ -85,7 +85,7 @@ def ticket(request):
     tickets = Ticket.objects.filter(
         session=session,
         service=service
-    ).order_by('-number')
+    ).order_by('-pk')
 
     # Checking if ticket count limit exceeded
     max_tickets_count = 0
@@ -219,7 +219,7 @@ def operator__take(request):
             is_skipped=False,
             is_active=False,
             service__in=services
-        ).order_by('number')
+        ).order_by('pk')
         if pending_tickets.exists():
             ticket = pending_tickets[0]
             ticket.take(operator)
@@ -261,6 +261,11 @@ def session__new(request):
     # Check if no active session exists
     if Session.objects.filter(zone=zone, date_finish__isnull=True).exists():
         return JsonResponse({ 'error': 'Opened session already exists' }, status=400)
+
+    # Skipping all tickets
+    tickets = Ticket.objects.filter(date_closed__isnull=True)
+    for ticket in tickets:
+        ticket.skip()
 
     # Creating new session
     session = Session.objects.create(
@@ -428,9 +433,9 @@ def session__info(request, session_id):
 
     # @todo status for planned_finish_datetime exceeded?
 
-    active_tickets = session.tickets.filter(is_active=True).order_by('number')
-    pending_tickets = session.tickets.filter(is_active=False, date_closed__isnull=True).order_by('number')
-    closed_tickets = session.tickets.filter(date_closed__isnull=False).order_by('number')
+    active_tickets = session.tickets.filter(is_active=True).order_by('pk')
+    pending_tickets = session.tickets.filter(is_active=False, date_closed__isnull=True).order_by('pk')
+    closed_tickets = session.tickets.filter(date_closed__isnull=False).order_by('pk')
     if not request.GET.get('full'):
         closed_tickets = closed_tickets[:10]
 
