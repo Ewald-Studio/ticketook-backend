@@ -93,7 +93,9 @@ def ticket(request):
     zone_limits = session.zone.service_limits.filter(service=service)
     if session_limits.exists():
         max_tickets_count = session_limits[0].max_tickets_count
-    elif zone_limits.exists(): 
+        if session_limits[0].service_is_disabled:
+            return JsonResponse({ 'error': 'Service is disabled' }, status=410)
+    elif zone_limits.exists():
         max_tickets_count = zone_limits[0].max_tickets_count
 
     if max_tickets_count > 0 and tickets.count() >= max_tickets_count:
@@ -366,6 +368,49 @@ def session__limits(request):
 
 
 @csrf_exempt
+def session__service_availability(request, session_id):
+    data = json.loads(request.body)
+
+    warnings = []
+
+    # Check if operator exists and has permission to manage sessions
+    try:
+        operator = Operator.objects.get(current_token=data['token'])
+    except Operator.DoesNotExist:
+        return JsonResponse({ 'error': 'Invalid token' }, status=401)
+    if not operator.is_manager:
+        return JsonResponse({ 'error': 'Operator has no permission to manage sessions' }, status=403)
+
+    # Check if session exists
+    try:
+        session = Session.objects.get(pk=session_id)
+    except Session.DoesNotExist:
+        return JsonResponse({ 'error': 'Session does not exist' }, status=404)
+    except KeyError:
+        return JsonResponse({ 'error': 'No session id specified' }, status=400)
+
+    try:
+        service = Service.objects.get(pk=data['service_id'])
+        limit_object, created = ServiceSessionLimit.objects.get_or_create(
+            session=session,
+            service=service
+        )
+        limit_object.service_is_disabled = data['service_is_disabled']
+        limit_object.save()
+    except:
+        warnings.append({ "error": "Invalid data" })
+
+    # Session is ready
+    response = {
+        'session': {
+            'id': session.pk
+        },
+        'warnings': warnings
+    }
+    return JsonResponse(response)
+
+
+@csrf_exempt
 def session__action(request, session_id, action_type):
     data = json.loads(request.body)
     warnings = []
@@ -431,7 +476,10 @@ def session__info(request, session_id):
     if status != 'finished' and session.planned_finish_datetime and session.planned_finish_datetime < timezone.now():
         status = 'timeout'
 
-    # @todo status for planned_finish_datetime exceeded?
+    limits = session.service_limits.all()
+    limits_data = {}
+    for limit in limits:
+        limits_data[limit.service.id] = { "max_tickets_count": limit.max_tickets_count, "service_is_disabled": limit.service_is_disabled }
 
     active_tickets = session.tickets.filter(is_active=True).order_by('pk')
     pending_tickets = session.tickets.filter(is_active=False, date_closed__isnull=True).order_by('pk')
@@ -455,7 +503,8 @@ def session__info(request, session_id):
             'active': tickets_list(active_tickets),
             'closed': tickets_list(closed_tickets),
             'pending': tickets_list(pending_tickets),
-        }
+        },
+        "limits": limits_data
     }
     return JsonResponse(response)
 

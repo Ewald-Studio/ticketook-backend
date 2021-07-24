@@ -107,6 +107,7 @@ class ServiceSessionLimit(models.Model):
     session = models.ForeignKey(Session, related_name='service_limits', on_delete=models.CASCADE)
     service = models.ForeignKey(Service, on_delete=models.CASCADE)
     max_tickets_count = models.PositiveIntegerField(default=0)
+    service_is_disabled = models.BooleanField(default=False)
 
 
 class Ticket(models.Model):
