@@ -267,7 +267,7 @@ def session__new(request):
     # Skipping all tickets
     tickets = Ticket.objects.filter(date_closed__isnull=True)
     for ticket in tickets:
-        ticket.skip()
+        ticket.skip(silent=True)
 
     # Creating new session
     session = Session.objects.create(

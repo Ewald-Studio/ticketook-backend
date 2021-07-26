@@ -160,13 +160,17 @@ class Ticket(models.Model):
             ticket=self
         )
 
-    def skip(self):
+    def skip(self, silent=False):
         self.date_closed = datetime.datetime.now()
         self.is_active = False
         self.is_skipped = True
         self.save()
+        if silent:
+            action = 'TICKET-SKIP-SILENT'
+        else:
+            action = 'TICKET-SKIP'
         Log.objects.create(
-            action='TICKET-SKIP', 
+            action=action, 
             zone=self.session.zone, 
             session=self.session, 
             service=self.service,
