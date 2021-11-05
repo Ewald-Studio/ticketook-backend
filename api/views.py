@@ -261,8 +261,20 @@ def session__new(request):
         return JsonResponse({ 'error': 'Invalid zone id' }, status=400)
 
     # Check if no active session exists
-    if Session.objects.filter(zone=zone, date_finish__isnull=True).exists():
-        return JsonResponse({ 'error': 'Opened session already exists' }, status=400)
+    # if zone.active_session is not None:
+    #     return JsonResponse({ 'error': 'Opened session already exists' }, status=400)
+    # else:
+    #     # Closing all ghost sessions of this zone if any
+    #     ghost_sessions = Session.objects.filter(zone=zone, date_finish__isnull=True)
+    #     for ghost_session in ghost_sessions:
+    #         ghost_session.date_finish = datetime.datetime.now()
+    #         ghost_session.is_paused = False
+    #         ghost_session.save()
+
+    # Force closing all sessions in the zone before creating new one
+    ghost_sessions = Session.objects.filter(zone=zone, date_finish__isnull=True)
+    for ghost_session in ghost_sessions:
+        ghost_session.finish()
 
     # Skipping all tickets
     tickets = Ticket.objects.filter(date_closed__isnull=True)
